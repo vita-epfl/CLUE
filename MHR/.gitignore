@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Distribution
+dist/
+build/
+*.egg-info/
+
+# Auto-generated version file
+mhr/_version.py
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+test.ply
+
+# Environments
+.venv/
+venv/
+
+# Pixi
+.pixi/
+pixi.lock
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Downloaded assets
+assets/
+assets.zip
+__MACOSX/

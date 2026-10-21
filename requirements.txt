@@ -1,0 +1,13 @@
+# FLAME, SMPLX, MHR (install the PyTorch build for your CUDA version first: https://pytorch.org)
+torch
+numpy
+smplx            # SMPL-X model code; also provides the LBS used by the FLAME layer
+pyrender         # offscreen rendering (EGL headless: PYOPENGL_PLATFORM=egl is set by the scripts)
+trimesh
+matplotlib
+cmasher
+Pillow
+# demo.py additionally needs tkinter (python3-tk); video.py needs the ffmpeg binary on PATH
+
+# ITW/inference and data-mining
+-r ITW/inference/requirements.txt

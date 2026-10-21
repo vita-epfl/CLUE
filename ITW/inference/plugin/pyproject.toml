@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sam3dbody-clue"
+version = "1.0.0"
+description = "SAM 3D Body (CLUE): per-vertex uncertainty for SAM 3D Body"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BSD-3-Clause-Clear" }
+dependencies = ["torch", "numpy", "safetensors", "huggingface_hub"]
+
+[tool.setuptools.packages.find]
+include = ["sam3dbody_clue*"]

@@ -1,0 +1,25 @@
+{
+  "query": "find frames where the right leg is most certain",
+  "mode": "part",
+  "direction": "certain",
+  "part": "leg",
+  "side": "right",
+  "groups": [
+    "r_upleg",
+    "r_lowleg",
+    "r_foot"
+  ],
+  "input": "../ITW/inference/examples/video.mp4",
+  "kind": "video",
+  "scan": "scans/video__36d691e93e.npz",
+  "people_scanned": 7273,
+  "num": 5,
+  "video_window_s": 2.0,
+  "definitions": {
+    "gap_to_rest_of_body": "level of the most certain other body group minus the level of the part (percentile points, highest first)",
+    "part_certainty": "level of the part (percentile points, lowest first)",
+    "level": "mean over the part's body groups of each group's mean per-vertex percentile (0-100)",
+    "percentiles": "CLUE's per-vertex sigma ranked among that vertex's values over 6,118 person-frames of in-the-wild video"
+  },
+  "created": "2026-10-21T11:25:42"
+}

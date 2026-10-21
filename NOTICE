@@ -1,0 +1,33 @@
+CLUE: closed-form per-vertex uncertainty for 3D morphable models
+Copyright (c) 2026 Megh Shukla, EPFL
+
+CLUE's code in this repository is released under the BSD-3-Clause-Clear License (LICENSE), which grants no patent
+rights. This covers CLUE's own files and CLUE's changes to third-party files. The parts listed below keep their own
+licences.
+
+Third-party code in this repository
+  FLAME/flame_pytorch/         FLAME_PyTorch (https://github.com/soubhiksanyal/FLAME_PyTorch), MIT License
+                               (FLAME/flame_pytorch/LICENSE); CLUE's changes to flame.py and config.py are under the
+                               BSD-3-Clause-Clear License. flame.py also keeps the Max Planck Society's notice on the
+                               FLAME code.
+  SMPLX/tools/                 from the SMPL-X repository (https://github.com/vchoutas/smplx), SMPL-X licence
+                               (SMPLX/LICENSE).
+  MHR/                         Meta's MHR (https://github.com/facebookresearch/MHR), Apache License 2.0 (MHR/LICENSE);
+                               CLUE's files and changes there are under the BSD-3-Clause-Clear License (MHR/NOTICE).
+  ITW/inference/sam_3d_body/   SAM 3D Body's model code (Meta), SAM License (ITW/inference/sam_3d_body/LICENSE);
+                               ITW/inference/NOTICE covers the rest of that folder.
+
+Models, not part of this repository (each user downloads them, see README.md)
+  FLAME/model/                 the FLAME model (FLAME licence, https://flame.is.tue.mpg.de) and FLAME_PyTorch's
+                               landmark embeddings
+  SMPLX/models/                the SMPL-X model (SMPL-X licence, https://smpl-x.is.tue.mpg.de)
+  MHR/assets/                  the MHR release assets (Apache License 2.0)
+  ITW/inference/assets/        Meta's SAM 3D Body checkpoint (SAM License) and MHR rig (Apache License 2.0); CLUE's
+                               weights (SAM License, https://huggingface.co/meghshukla/clue)
+
+The example images and videos in ITW/inference/examples, and the frames in data-mining/queries, are from videos on
+Pexels (https://www.pexels.com), used under the Pexels License.
+
+If you use CLUE's code, weights or results, please cite the paper:
+M. Shukla et al., "Modeling Uncertainty Propagation in 3D Morphable Models", arXiv:2610.24646, 2026
+(https://arxiv.org/abs/2610.24646).

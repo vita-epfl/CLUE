@@ -1,0 +1,23 @@
+version: "3"
+
+services:
+  clue:
+    image: meghshukla/clue
+    ipc: host
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: >
+      sh -c "/bin/bash"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

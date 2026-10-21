@@ -1,0 +1,24 @@
+{
+  "query": "find frames where the shape is the most uncertain",
+  "mode": "shape",
+  "direction": "uncertain",
+  "part": null,
+  "side": null,
+  "groups": [],
+  "input": "../ITW/inference/examples/video.mp4",
+  "kind": "video",
+  "scan": "scans/video__36d691e93e.npz",
+  "people_scanned": 7273,
+  "num": 5,
+  "video_window_s": 2.0,
+  "definitions": {
+    "gap_to_overall_uncertainty": "shape level minus overall level (percentile points, highest first)",
+    "shape_uncertainty": "shape level (percentile points, highest first)",
+    "shape_level": "percentile of the body's sigma from body shape alone in the reference (0-100)",
+    "overall_level": "percentile of the body's overall sigma (shape and pose) in the reference (0-100)",
+    "body_sigma": "root of the mean over the 14 body groups other than c_neck, c_head, c_jaw, l_hand, r_hand of each group's mean squared sigma (cm); head and hands have shape parameters of their own",
+    "body_shape": "CLUE's variance of MHR's 20 body-shape parameters alone (identity 0-19), propagated to the vertices",
+    "reference": "CLUE's sigma of the body [cm] from body shape alone (MHR identity parameters 0-19) and overall, at 401 quantile levels; per person, the root of the mean over the 14 body groups other than c_neck, c_head, c_jaw, l_hand, r_hand of each group's mean squared sigma; reference population = 7273 person-frames of a curated in-the-wild video"
+  },
+  "created": "2026-10-21T11:25:19"
+}

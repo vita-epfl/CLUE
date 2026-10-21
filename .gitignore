@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CLUE: models under their own licences. Every user downloads them (README.md); they are never committed.
+FLAME/model/
+SMPLX/models/
+MHR/assets/
+MHR/assets.zip
+ITW/inference/assets/
+data-mining/scans/

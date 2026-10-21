@@ -1,0 +1,16 @@
+CLUE's additions to MHR
+Copyright (c) 2026 Megh Shukla, EPFL
+
+This folder is Meta's MHR (https://github.com/facebookresearch/MHR), released under the Apache License 2.0 (LICENSE),
+with CLUE's code added. CLUE's files and CLUE's modifications are released under the BSD-3-Clause-Clear License
+(LICENSE-CLUE), which grants no patent rights:
+
+  added by CLUE:     algorithm.py, model_loader.py, evaluation.py, video.py, results/
+  modified by CLUE:  demo.py (Meta's original code under the Apache License 2.0; CLUE's changes under the
+                     BSD-3-Clause-Clear License)
+
+Everything else in this folder is Meta's MHR, under the Apache License 2.0.
+
+If you use CLUE's code or results, please cite the paper:
+M. Shukla et al., "Modeling Uncertainty Propagation in 3D Morphable Models", arXiv:2610.24646, 2026
+(https://arxiv.org/abs/2610.24646).

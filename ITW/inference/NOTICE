@@ -1,0 +1,19 @@
+CLUE: closed-form per-vertex uncertainty for 3D human meshes
+Copyright (c) 2026 Megh Shukla, EPFL
+
+The CLUE code in this folder (run.py, clue_inference/ and plugin/) is released under the BSD-3-Clause-Clear License
+(LICENSE).
+No patent rights are granted. Keep this notice in all copies or substantial portions of the code.
+
+CLUE's weights (assets/clue.safetensors and assets/sam3dbody_clue.safetensors, from https://huggingface.co/meghshukla/clue)
+build on Meta's SAM 3D Body and are released under the SAM License.
+
+If you use CLUE's code, weights or results, please cite the paper:
+M. Shukla et al., "Modeling Uncertainty Propagation in 3D Morphable Models", arXiv:2610.24646, 2026
+(https://arxiv.org/abs/2610.24646).
+
+Third-party parts keep their own licences: the SAM 3D Body model code in sam_3d_body/ (SAM License,
+sam_3d_body/LICENSE); the repository's MHR folder (Meta's MHR under Apache 2.0, CLUE's
+additions under BSD-3-Clause-Clear: MHR/NOTICE); in assets/, Meta's SAM 3D Body checkpoint
+(SAM License) and MHR rig (Apache 2.0); downloaded at run time, the DINOv3 model code (DINOv3 License) and torchvision's
+person detector (BSD-3-Clause). The example images and videos are from videos on Pexels, used under the Pexels License.

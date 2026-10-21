@@ -1,0 +1,2 @@
+# Git LFS: the 2-minute example video (191 MB) of data-mining
+ITW/inference/examples/video.mp4 filter=lfs diff=lfs merge=lfs -text
