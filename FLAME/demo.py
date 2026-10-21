@@ -1,8 +1,7 @@
 """Interactive FLAME viewer with CLUE uncertainty overlays.
 
 The viewer combines a Tkinter control panel with a pyrender-based mesh preview.
-It supports deterministic FLAME edits, uncertainty amplitude overlays, and an
-optional ``--direction`` mode that colors vertices by dominant variance axis.
+It supports deterministic FLAME edits and uncertainty amplitude overlays.
 """
 
 from __future__ import annotations
@@ -61,14 +60,6 @@ try:
 except NameError:
     _BASE_COLOR = np.array([0.05, 0.14, 0.28], dtype=np.float32)
 
-# Per-axis target colours (x=red, y=yellow, z=green)
-_DIR_COLORS = np.array([
-    [0.85, 0.05, 0.05],   # x → red
-    [0.85, 0.80, 0.05],   # y → yellow
-    [0.05, 0.65, 0.05],   # z → green
-], dtype=np.float32)
-_DIR_LABELS = ["x", "y", "z"]
-
 # ---------------------------------------------------------------------------
 # Joint-sphere constants  (FLAME kintree order: global, neck, jaw, l_eye, r_eye)
 # ---------------------------------------------------------------------------
@@ -105,28 +96,6 @@ def _cylinder_between(p1: np.ndarray, p2: np.ndarray, radius: float):
         R = np.eye(4)
     T = trimesh.transformations.translation_matrix((p1 + p2) * 0.5)
     return trimesh.creation.cylinder(radius=radius, height=length, sections=8, transform=T @ R)
-
-
-def _dir_colors(var_xyz: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Colour vertices by dominant variance axis, scaled by total uncertainty.
-
-    Parameters
-    ----------
-    var_xyz : (V, 3) per-vertex variance in x, y, z
-    t       : (V,) normalised total uncertainty in [0, 1]
-
-    Returns
-    -------
-    (V, 4) RGBA uint8
-        t=0 → base mesh colour regardless of dominant axis.
-        t=1 → pure axis colour (red / yellow / green).
-    """
-    dominant  = var_xyz.argmax(axis=-1)              # (V,) in {0, 1, 2}
-    target    = _DIR_COLORS[dominant]                 # (V, 3)
-    t_col     = t[:, np.newaxis]                      # (V, 1)
-    rgb       = (1.0 - t_col) * _BASE_COLOR + t_col * target
-    alpha     = np.ones((len(t), 1), dtype=np.float32)
-    return (np.concatenate([rgb, alpha], axis=-1) * 255).astype(np.uint8)
 
 
 _AMPLITUDE_HIGH = np.array([0.85, 0.05, 0.05], dtype=np.float32)   # red – max uncertainty
@@ -253,8 +222,7 @@ class FlameInteractiveApp:
     VAR_SLIDER_MAX      = 0.5   # maximum value of shape/expression σ² sliders
     POSE_VAR_SLIDER_MAX = 0.1   # maximum value of jaw/neck σ² sliders
 
-    def __init__(self, direction: bool = True):
-        self._direction_mode = direction
+    def __init__(self):
         self.config = get_config()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -606,60 +574,6 @@ class FlameInteractiveApp:
                 for i in range(n_params)
             )
 
-    def _compute_variance_colors(self) -> tuple[np.ndarray, float]:
-        """Propagate σ² → per-vertex σ → RGBA uint8 colours.
-
-        Normalization uses a *global* ceiling: the maximum σ any vertex can
-        reach when all currently-active sliders are set to VAR_SLIDER_MAX.
-
-            t[v] = std_actual[v] / std_ref_max_global
-
-        This preserves per-vertex spatial variation (vertices differ in how
-        sensitive they are to each shape / expression parameter) while keeping
-        colours proportional to slider values — a slider at 0.3 tints vertices
-        at 30 % of their maximum red intensity.
-
-        When no slider is active (all σ² = 0) std_actual = 0 → t = 0
-        everywhere → _unc_colors returns the base mesh colour, giving a
-        seamless visual match with the zero-variance state.
-
-        Returns
-        -------
-        vertex_colors : (V, 4) RGBA uint8
-        std_ref_max   : global σ ceiling (max σ at full slider=VAR_SLIDER_MAX uncertainty),
-                        used for colorbar tick labels.
-        """
-        common_args = dict(
-            shape_params=self.shape_params,
-            expression_params=self.expression_params,
-            pose_params=self.pose_params,
-            neck_pose=self.neck_pose,
-            eye_pose=self.eye_pose,
-        )
-
-        # Actual per-vertex variance (V, 3) and total σ (V,)
-        total_var, _ = self.clue.compute_variance(
-            self._build_beta_vars(), self._build_pose_vars(), **common_args
-        )  # (1, V, 3)
-        var_xyz = np.maximum(total_var[0].cpu().numpy(), 0.0)           # (V, 3)
-        std     = np.sqrt(var_xyz.sum(axis=-1)) * 1000                  # (V,) mm
-
-        # Ceiling: global max σ when all active sliders → 1
-        total_var_max, _ = self.clue.compute_variance(
-            self._build_beta_vars_max(), self._build_pose_vars_max(), **common_args
-        )
-        std_max_vx = np.sqrt(np.maximum(
-            total_var_max[0].sum(dim=-1).cpu().numpy(), 0.0
-        )) * 1000
-        std_ref_max = float(std_max_vx.max())
-
-        t = std / std_ref_max if std_ref_max > 0.0 else np.zeros_like(std)
-
-        if self._direction_mode:
-            return _dir_colors(var_xyz, t), std_ref_max
-        else:
-            return _amplitude_colors(t), std_ref_max
-
     def _compute_per_param_colors(self) -> tuple[np.ndarray, float | None]:
         """Per-group amplitude coloring matching the export scripts.
 
@@ -714,66 +628,9 @@ class FlameInteractiveApp:
 
     # ── Colorbar ──────────────────────────────────────────────────────────────
 
-    def _draw_colorbar(self, img: Image.Image, std_ref_max: float):
-        """Render a legend in the top-right corner of img.
-
-        Direction mode  → dominant-axis swatch legend (x/y/z colours).
-        Amplitude mode  → vertical gradient bar from base colour (low) to red (high).
-
-        Returns (img, panel_rect) where panel_rect is (px, py, panel_w, panel_h) for
-        direction mode (used to position the axis gizmo) or None for amplitude mode.
-        """
-        if self._direction_mode:
-            return self._draw_direction_legend(img, std_ref_max)
-        else:
-            return self._draw_amplitude_bar(img, std_ref_max), None
-
-    def _draw_direction_legend(self, img: Image.Image, std_ref_max: float):
-        """Dominant-axis direction legend with std dev text inside the panel."""
-        draw       = ImageDraw.Draw(img)
-        iw, ih     = img.size
-        swatch_w   = 40
-        swatch_h   = 26
-        margin_r   = 14
-        margin_t   = 14
-        row_gap    = 6
-        pad        = 10
-
-        n = len(_DIR_LABELS)
-        panel_w  = 170   # wide enough for "Axis of largest variation"
-        swatches_h = n * swatch_h + (n - 1) * row_gap
-        # top-pad + title + swatches + gap + separator + gap + std-text + bottom-pad
-        panel_h  = pad + 20 + swatches_h + 8 + 1 + 6 + 14 + pad
-
-        px = iw - margin_r - panel_w
-        py = margin_t
-
-        draw.rectangle(
-            [px, py, px + panel_w, py + panel_h],
-            fill=(245, 245, 245), outline=(190, 190, 190),
-        )
-        draw.text((px + pad, py + pad), "Axis of largest variation",
-                  fill=(50, 50, 50), font=_CBAR_FONT)
-
-        for i, (lbl, col) in enumerate(zip(_DIR_LABELS, _DIR_COLORS)):
-            sx = px + pad
-            sy = py + pad + 20 + i * (swatch_h + row_gap)
-            rgb_u8 = tuple((col * 255).astype(np.uint8))
-            draw.rectangle([sx, sy, sx + swatch_w, sy + swatch_h],
-                           fill=rgb_u8, outline=(80, 80, 80))
-            draw.text((sx + swatch_w + 6, sy + 5), lbl, fill=(30, 30, 30), font=_CBAR_FONT)
-
-        # Thin separator above the std dev line
-        sep_y = py + pad + 20 + swatches_h + 8
-        draw.line([(px + pad, sep_y), (px + panel_w - pad, sep_y)],
-                  fill=(190, 190, 190), width=1)
-
-        draw.text(
-            (px + pad, sep_y + 6),
-            f"max std = {std_ref_max:.1f} mm",
-            fill=(80, 80, 80), font=_CBAR_FONT,
-        )
-        return img, (px, py, panel_w, panel_h)
+    def _draw_colorbar(self, img: Image.Image, std_ref_max: float) -> Image.Image:
+        """Render the uncertainty colour bar in the top-right corner of img."""
+        return self._draw_amplitude_bar(img, std_ref_max)
 
     def _draw_amplitude_bar(self, img: Image.Image, std_ref_max: float) -> Image.Image:
         """Vertical gradient colorbar: base colour (bottom/low) → red (top/high)."""
@@ -826,58 +683,6 @@ class FlameInteractiveApp:
         )
         return img
 
-    # ── Axis gizmo ───────────────────────────────────────────────────────────
-
-    def _draw_axis_gizmo(self, img: Image.Image, center=None) -> Image.Image:
-        """Draw a small XYZ axis gizmo.
-
-        When *center* is None the gizmo is placed in the bottom-left corner.
-        Otherwise *center* is an (ox, oy) pixel coordinate for the gizmo origin
-        (used to position it adjacent to the direction legend in direction mode).
-
-        Axes are projected using the current camera orientation so the gizmo
-        rotates in sync with the mesh.  Colours match the direction colorbar:
-        x=red, y=yellow, z=green.
-        """
-        draw    = ImageDraw.Draw(img)
-        iw, ih  = img.size
-        arm_len = 50          # pixels
-        if center is None:
-            margin = 60       # distance of gizmo centre from corner
-            ox, oy = margin, ih - margin   # gizmo centre (bottom-left)
-        else:
-            ox, oy = int(center[0]), int(center[1])
-
-        # Camera rotation matrix (columns: right, up, -forward in world space).
-        # Transposing gives the view rotation (world → camera).
-        pose   = self.orbit.get_pose()
-        view_R = pose[:3, :3].T
-
-        axes = [
-            (np.array([1.0, 0.0, 0.0]), _DIR_COLORS[0], "x"),
-            (np.array([0.0, 1.0, 0.0]), _DIR_COLORS[1], "y"),
-            (np.array([0.0, 0.0, 1.0]), _DIR_COLORS[2], "z"),
-        ]
-
-        # Draw back-to-front (sort by camera-space depth, largest first)
-        axes_sorted = sorted(
-            axes, key=lambda a: -(view_R @ a[0])[2]
-        )
-
-        for world_dir, color, label in axes_sorted:
-            cam_dir = view_R @ world_dir
-            # Project onto screen: cam x→right, cam y→up (flip to image down)
-            tx = int(ox + arm_len * cam_dir[0])
-            ty = int(oy - arm_len * cam_dir[1])
-            rgb_u8 = tuple((color * 255).astype(np.uint8))
-            draw.line([(ox, oy), (tx, ty)], fill=rgb_u8, width=3)
-            # Small filled circle at the tip
-            r = 4
-            draw.ellipse([tx - r, ty - r, tx + r, ty + r], fill=rgb_u8)
-            draw.text((tx + 5, ty - 7), label, fill=rgb_u8, font=_CBAR_FONT)
-
-        return img
-
     # ── Render loop ──────────────────────────────────────────────────────────
 
     def _mark_dirty(self) -> None:
@@ -901,17 +706,8 @@ class FlameInteractiveApp:
                     )
 
                 # Colorbar / legend overlay (drawn on the final, scaled image)
-                gizmo_center = None
                 if self._var_range is not None:
-                    img, panel_rect = self._draw_colorbar(img, self._var_range)
-                    if panel_rect is not None:
-                        # Place gizmo centred below the direction legend panel.
-                        px, py, panel_w, panel_h = panel_rect
-                        gizmo_center = (px + panel_w // 2, py + panel_h + 65)
-
-                # Axis gizmo (direction mode only)
-                if self._direction_mode:
-                    img = self._draw_axis_gizmo(img, center=gizmo_center)
+                    img = self._draw_colorbar(img, self._var_range)
 
                 self._photo_image = ImageTk.PhotoImage(image=img)
                 self.canvas.delete("all")
@@ -962,13 +758,9 @@ class FlameInteractiveApp:
         vertices, joints = self._compute_vertices()
         tri_mesh = self._build_trimesh(vertices, self.center)
 
-        # Always render with vertex colours in the active uncertainty mode.
-        if self._direction_mode:
-            vertex_colors, std_ref_max = self._compute_variance_colors()
-            self._var_range = std_ref_max if self._variance_active() else None
-        else:
-            vertex_colors, std_ref_max = self._compute_per_param_colors()
-            self._var_range = std_ref_max
+        # Always render with the per-vertex uncertainty colours.
+        vertex_colors, std_ref_max = self._compute_per_param_colors()
+        self._var_range = std_ref_max
 
         vc_mat  = self.vc_material
         fallback = self.material
@@ -1261,24 +1053,13 @@ def parse_args(
         description="Interactive FLAME viewer with CLUE uncertainty overlays.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--direction",
-        action="store_true",
-        default=False,
-        help=(
-            "Colour-code uncertainty by dominant variance axis "
-            "(x=red, y=yellow, z=green). "
-            "Without this flag, only the uncertainty amplitude is shown: "
-            "base mesh colour for low uncertainty, red for high."
-        ),
-    )
     return parser.parse_known_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    viewer_args, flame_args = parse_args(argv)
+    _, flame_args = parse_args(argv)
     with _temporary_cli_args(flame_args):
-        app = FlameInteractiveApp(direction=viewer_args.direction)
+        app = FlameInteractiveApp()
     app.run()
     return 0
 

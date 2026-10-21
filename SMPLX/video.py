@@ -9,8 +9,7 @@ named ``<sweep>.mp4``.
 The module is intentionally headless: it builds a pyrender scene, renders
 frames offscreen, and saves videos to ``results/videos/`` by default. Use
 ``--quality=default`` for the fast export path or ``--quality=high`` for
-higher-quality MP4s. Pass ``--direction`` to color uncertainty by the dominant
-variance axis instead of amplitude only.
+higher-quality MP4s.
 """
 
 from __future__ import annotations
@@ -69,14 +68,6 @@ else:
     _BASE_COLOR = np.array([0.05, 0.14, 0.28], dtype=np.float32)
 
 _AMPLITUDE_HIGH = np.array([0.85, 0.05, 0.05], dtype=np.float32)
-_DIR_COLORS = np.array(
-    [
-        [0.85, 0.05, 0.05],
-        [0.85, 0.80, 0.05],
-        [0.05, 0.65, 0.05],
-    ],
-    dtype=np.float32,
-)
 
 
 def _amplitude_colors(t: np.ndarray) -> np.ndarray:
@@ -89,17 +80,6 @@ def _amplitude_colors(t: np.ndarray) -> np.ndarray:
     t_col = tt[:, np.newaxis]
     rgb = (1.0 - t_col) * _BASE_COLOR + t_col * _AMPLITUDE_HIGH
     alpha = np.ones((len(tt), 1), dtype=np.float32)
-    return (np.concatenate([rgb, alpha], axis=-1) * 255).astype(np.uint8)
-
-
-def _dir_colors(var_xyz: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Color vertices by dominant variance axis, scaled by total uncertainty."""
-
-    dominant = var_xyz.argmax(axis=-1)
-    target = _DIR_COLORS[dominant]
-    t_col = np.clip(t, 0.0, 1.0).astype(np.float32)[:, np.newaxis]
-    rgb = (1.0 - t_col) * _BASE_COLOR + t_col * target
-    alpha = np.ones((len(t), 1), dtype=np.float32)
     return (np.concatenate([rgb, alpha], axis=-1) * 255).astype(np.uint8)
 
 
@@ -248,9 +228,7 @@ class SmplxVideoExporter:
         model_folder: str | Path,
         num_betas: int = 10,
         num_expression_coeffs: int = 10,
-        direction: bool = False,
     ) -> None:
-        self._direction_mode = direction
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self._log(f"Using device: {self.device.type.upper()}")
@@ -685,8 +663,6 @@ class SmplxVideoExporter:
         else:
             t = std / std_ref_max
 
-        if self._direction_mode:
-            return _dir_colors(var_xyz, t), std_ref_max
         return _amplitude_colors(t), std_ref_max
 
     def _draw_colorbar(self, img: Image.Image, std_ref_max: float) -> Image.Image:
@@ -1162,12 +1138,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default="default",
         help="Export quality profile: default is faster, high restores slower high-quality MP4s.",
     )
-    parser.add_argument(
-        "--direction",
-        action="store_true",
-        default=False,
-        help="Color-code uncertainty by dominant variance axis instead of amplitude only.",
-    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -1180,7 +1150,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         model_folder=Path(os.path.expandvars(args.model_folder)).expanduser(),
         num_betas=args.num_betas,
         num_expression_coeffs=args.num_expression_coeffs,
-        direction=args.direction,
     )
     try:
         exporter.create_videos(

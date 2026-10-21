@@ -20,6 +20,8 @@ Megh Shukla<sup>1</sup> · Edo Collins<sup>2</sup> · Prashanth Chandran<sup>2</
 <p align="center">
 <a href="#plugin"><img src="docs/card_plugin.jpg" width="300" alt="Plugin for SAM 3D Body: uncertainty for your SAM 3D Body pipeline, in three lines of code"></a>
 <a href="https://huggingface.co/spaces/meghshukla/clue-demo"><img src="docs/card_demo.jpg" width="300" alt="Online demo: your own images and videos, in the browser"></a>
+<br>
+<a href="#viewer"><img src="docs/card_viewer.jpg" width="300" alt="Interactive viewers: move a parameter or its uncertainty, watch the mesh respond"></a>
 <a href="#data-mining"><img src="docs/card_data_mining.jpg" width="300" alt="Data mining with agents: find the frames where a body part is uncertain"></a>
 </p>
 
@@ -47,6 +49,18 @@ The head's weights are downloaded from [meghshukla/clue](https://huggingface.co/
 ## Try CLUE in your browser <a name="demo"></a>
 
 **[Hugging Face demo: meghshukla/clue-demo](https://huggingface.co/spaces/meghshukla/clue-demo)**. No installation needed. Upload an image, take one with your webcam, or upload a video (its first 10 s are processed). For every person, the demo shows the input, Meta's SAM 3D Body (grey mesh) and CLUE (mesh coloured by per-vertex uncertainty) side by side.
+
+
+## Interactive viewers: watch uncertainty propagate <a name="viewer"></a>
+
+The `FLAME`, `SMPLX` and `MHR` folders each come with an interactive viewer (`demo.py`). Every parameter (shape, expression, jaw, body pose, ...) has a second slider for its uncertainty (σ²). Move either one, and CLUE recomputes the per-vertex uncertainty and recolours the mesh as you go. Below, giving a single expression parameter some uncertainty lights up the mouth and the cheeks.
+
+<img src="docs/flame_viewer.png" width="100%" alt="FLAME interactive viewer: parameter and uncertainty sliders on the left, the mesh coloured by per-vertex uncertainty on the right">
+
+```bash
+cd FLAME                    # or SMPLX, MHR
+python demo.py              # needs a display
+```
 
 
 ## Data mining with coding agents <a name="data-mining"></a>

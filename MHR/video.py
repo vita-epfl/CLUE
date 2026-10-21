@@ -53,14 +53,6 @@ else:
     _BASE_COLOR = np.array([0.05, 0.14, 0.28], dtype=np.float32)
 
 _AMPLITUDE_HIGH = np.array([0.85, 0.05, 0.05], dtype=np.float32)
-_DIR_COLORS = np.array(
-    [
-        [0.85, 0.05, 0.05],
-        [0.85, 0.80, 0.05],
-        [0.05, 0.65, 0.05],
-    ],
-    dtype=np.float32,
-)
 _MODEL_STD_TO_MM = 10.0
 _ROOT_MODEL_PARAM_COUNT = 6
 
@@ -71,15 +63,6 @@ def _amplitude_colors(t: np.ndarray) -> np.ndarray:
         return (_TURBO(tt) * 255).astype(np.uint8)
     rgb = (1.0 - tt[:, None]) * _BASE_COLOR + tt[:, None] * _AMPLITUDE_HIGH
     alpha = np.ones((len(tt), 1), dtype=np.float32)
-    return (np.concatenate([rgb, alpha], axis=-1) * 255).astype(np.uint8)
-
-
-def _dir_colors(var_xyz: np.ndarray, t: np.ndarray) -> np.ndarray:
-    dominant = var_xyz.argmax(axis=-1)
-    target = _DIR_COLORS[dominant]
-    t_col = np.clip(t, 0.0, 1.0).astype(np.float32)[:, None]
-    rgb = (1.0 - t_col) * _BASE_COLOR + t_col * target
-    alpha = np.ones((len(t), 1), dtype=np.float32)
     return (np.concatenate([rgb, alpha], axis=-1) * 255).astype(np.uint8)
 
 
@@ -224,9 +207,7 @@ class MhrVideoExporter:
         num_expression_coeffs: int = 10,
         num_model_params: int = 204,
         apply_correctives: bool = False,
-        direction: bool = False,
     ) -> None:
-        self._direction_mode = direction
         self.apply_correctives = apply_correctives
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -573,8 +554,6 @@ class MhrVideoExporter:
             std_ref_max = None
         else:
             t = std / std_ref_max
-        if self._direction_mode:
-            return _dir_colors(var_xyz, t), std_ref_max
         return _amplitude_colors(t), std_ref_max
 
     def _draw_colorbar(self, img: Image.Image, std_ref_max: float) -> Image.Image:
@@ -940,16 +919,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=False,
         help="Render deterministic pose correctives; CLUE does not propagate corrective-network uncertainty.",
     )
-    parser.add_argument(
-        "--direction",
-        action="store_true",
-        default=False,
-        help=(
-            "Color-code uncertainty by dominant variance axis "
-            "(x=red, y=yellow, z=green). "
-            "Without this flag, only the uncertainty amplitude is shown."
-        ),
-    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -963,7 +932,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         num_expression_coeffs=args.num_expression_coeffs,
         num_model_params=args.num_model_params,
         apply_correctives=args.apply_correctives,
-        direction=args.direction,
     )
     try:
         exporter.create_videos(out_dir=Path(args.out_dir).expanduser(), quality=args.quality)

@@ -1,8 +1,7 @@
 """Interactive SMPL-X viewer with CLUE uncertainty overlays.
 
 The viewer combines a Tkinter control panel with a pyrender-based mesh preview.
-It supports deterministic SMPL-X edits, uncertainty amplitude overlays, and an
-optional ``--direction`` mode that colors vertices by dominant variance axis.
+It supports deterministic SMPL-X edits and uncertainty amplitude overlays.
 """
 
 from __future__ import annotations
@@ -62,14 +61,6 @@ try:
 except NameError:
     _BASE_COLOR = np.array([0.05, 0.14, 0.28], dtype=np.float32)
 
-# Per-axis target colours (x=red, y=yellow, z=green)
-_DIR_COLORS = np.array([
-    [0.85, 0.05, 0.05],   # x → red
-    [0.85, 0.80, 0.05],   # y → yellow
-    [0.05, 0.65, 0.05],   # z → green
-], dtype=np.float32)
-_DIR_LABELS = ["x", "y", "z"]
-
 _AMPLITUDE_HIGH = np.array([0.85, 0.05, 0.05], dtype=np.float32)   # red – max uncertainty
 
 # ---------------------------------------------------------------------------
@@ -106,28 +97,6 @@ def _cylinder_between(p1: np.ndarray, p2: np.ndarray, radius: float):
         sections=8,
         transform=translation @ rotation,
     )
-
-
-def _dir_colors(var_xyz: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Colour vertices by dominant variance axis, scaled by total uncertainty.
-
-    Parameters
-    ----------
-    var_xyz : (V, 3) per-vertex variance in x, y, z
-    t       : (V,) normalised total uncertainty in [0, 1]
-
-    Returns
-    -------
-    (V, 4) RGBA uint8
-        t=0 → base mesh colour regardless of dominant axis.
-        t=1 → pure axis colour (red / yellow / green).
-    """
-    dominant = var_xyz.argmax(axis=-1)
-    target = _DIR_COLORS[dominant]
-    t_col = t[:, np.newaxis]
-    rgb = (1.0 - t_col) * _BASE_COLOR + t_col * target
-    alpha = np.ones((len(t), 1), dtype=np.float32)
-    return (np.concatenate([rgb, alpha], axis=-1) * 255).astype(np.uint8)
 
 
 def _amplitude_colors(t: np.ndarray) -> np.ndarray:
@@ -262,9 +231,7 @@ class SmplxInteractiveApp:
         num_betas: int,
         num_expression_coeffs: int,
         use_face_contour: bool,
-        direction: bool,
     ):
-        self._direction_mode = direction
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = smplx.create(
@@ -555,29 +522,6 @@ class SmplxInteractiveApp:
             pose_stds.append(float(np.sqrt(var_xyz.sum(axis=-1)).max()) * 1000)
         self._param_group_max_std["pose"] = max(pose_stds) if pose_stds else 1e-12
 
-    def _compute_variance_colors(self) -> tuple[np.ndarray, float]:
-        """Propagate σ² → per-vertex σ → RGBA uint8 colours (direction mode)."""
-        common = dict(betas=self.betas, expression=self.expression, **self._joint_pose_kwargs())
-
-        total_var, _ = self.clue.compute_variance(
-            self._build_beta_vars(), self._build_pose_vars(), **common
-        )
-        var_xyz = np.maximum(total_var[0].detach().cpu().numpy(), 0.0)
-        std     = np.sqrt(var_xyz.sum(axis=-1)) * 1000.0
-
-        total_var_max, _ = self.clue.compute_variance(
-            self._build_beta_vars_max(), self._build_pose_vars_max(), **common
-        )
-        std_max_vx  = np.sqrt(np.maximum(total_var_max[0].sum(dim=-1).detach().cpu().numpy(), 0.0)) * 1000.0
-        std_ref_max = float(std_max_vx.max())
-
-        t = std / std_ref_max if std_ref_max > 0.0 else np.zeros_like(std)
-
-        if self._direction_mode:
-            return _dir_colors(var_xyz, t), std_ref_max
-        else:
-            return _amplitude_colors(t), std_ref_max
-
     def _compute_per_param_colors(self) -> tuple[np.ndarray, float | None]:
         """Per-group amplitude coloring: each group normalised by its own peak σ.
 
@@ -720,59 +664,9 @@ class SmplxInteractiveApp:
 
     # ── Colorbar ──────────────────────────────────────────────────────────────
 
-    def _draw_colorbar(self, img: Image.Image, std_ref_max: float):
-        """Render a legend in the top-right corner of img.
-
-        Direction mode  → dominant-axis swatch legend.
-        Amplitude mode  → vertical gradient bar.
-
-        Returns (img, panel_rect) where panel_rect is (px, py, panel_w, panel_h)
-        for direction mode, or None for amplitude mode.
-        """
-        if self._direction_mode:
-            return self._draw_direction_legend(img, std_ref_max)
-        else:
-            return self._draw_amplitude_bar(img, std_ref_max), None
-
-    def _draw_direction_legend(self, img: Image.Image, std_ref_max: float):
-        """Dominant-axis direction legend with std dev text inside the panel."""
-        draw     = ImageDraw.Draw(img)
-        iw, ih   = img.size
-        swatch_w = 40
-        swatch_h = 26
-        margin_r = 14
-        margin_t = 14
-        row_gap  = 6
-        pad      = 10
-
-        n          = len(_DIR_LABELS)
-        panel_w    = 170
-        swatches_h = n * swatch_h + (n - 1) * row_gap
-        panel_h    = pad + 20 + swatches_h + 8 + 1 + 6 + 14 + pad
-
-        px = iw - margin_r - panel_w
-        py = margin_t
-
-        draw.rectangle([px, py, px + panel_w, py + panel_h],
-                       fill=(245, 245, 245), outline=(190, 190, 190))
-        draw.text((px + pad, py + pad), "Axis of largest variation",
-                  fill=(50, 50, 50), font=_CBAR_FONT)
-
-        for i, (lbl, col) in enumerate(zip(_DIR_LABELS, _DIR_COLORS)):
-            sx     = px + pad
-            sy     = py + pad + 20 + i * (swatch_h + row_gap)
-            rgb_u8 = tuple((col * 255).astype(np.uint8))
-            draw.rectangle([sx, sy, sx + swatch_w, sy + swatch_h],
-                           fill=rgb_u8, outline=(80, 80, 80))
-            draw.text((sx + swatch_w + 6, sy + 5), lbl, fill=(30, 30, 30), font=_CBAR_FONT)
-
-        sep_y = py + pad + 20 + swatches_h + 8
-        draw.line([(px + pad, sep_y), (px + panel_w - pad, sep_y)],
-                  fill=(190, 190, 190), width=1)
-        draw.text((px + pad, sep_y + 6),
-                  f"max std = {std_ref_max:.1f} mm",
-                  fill=(80, 80, 80), font=_CBAR_FONT)
-        return img, (px, py, panel_w, panel_h)
+    def _draw_colorbar(self, img: Image.Image, std_ref_max: float) -> Image.Image:
+        """Render the uncertainty colour bar in the top-right corner of img."""
+        return self._draw_amplitude_bar(img, std_ref_max)
 
     def _draw_amplitude_bar(self, img: Image.Image, std_ref_max: float) -> Image.Image:
         """Vertical gradient colorbar: base colour (bottom/low) → red (top/high)."""
@@ -813,49 +707,6 @@ class SmplxInteractiveApp:
         draw.text((px + pad, by + bar_h - 14), "0 mm",                 fill=(30, 30, 30), font=_CBAR_FONT)
         return img
 
-    # ── Axis gizmo ───────────────────────────────────────────────────────────
-
-    def _draw_axis_gizmo(
-        self,
-        img: Image.Image,
-        center: tuple[int, int] | None = None,
-    ) -> Image.Image:
-        """Draw a small XYZ axis gizmo.
-
-        When *center* is None the gizmo is placed in the bottom-left corner.
-        Otherwise *center* is an (ox, oy) pixel coordinate for the gizmo origin.
-        """
-        draw    = ImageDraw.Draw(img)
-        iw, ih  = img.size
-        arm_len = 50
-        if center is None:
-            margin = 60
-            ox, oy = margin, ih - margin
-        else:
-            ox, oy = int(center[0]), int(center[1])
-
-        pose   = self.orbit.get_pose()
-        view_R = pose[:3, :3].T
-
-        axes = [
-            (np.array([1.0, 0.0, 0.0]), _DIR_COLORS[0], "x"),
-            (np.array([0.0, 1.0, 0.0]), _DIR_COLORS[1], "y"),
-            (np.array([0.0, 0.0, 1.0]), _DIR_COLORS[2], "z"),
-        ]
-        axes_sorted = sorted(axes, key=lambda a: -(view_R @ a[0])[2])
-
-        for world_dir, color, label in axes_sorted:
-            cam_dir = view_R @ world_dir
-            tx      = int(ox + arm_len * cam_dir[0])
-            ty      = int(oy - arm_len * cam_dir[1])
-            rgb_u8  = tuple((color * 255).astype(np.uint8))
-            draw.line([(ox, oy), (tx, ty)], fill=rgb_u8, width=3)
-            r = 4
-            draw.ellipse([tx - r, ty - r, tx + r, ty + r], fill=rgb_u8)
-            draw.text((tx + 5, ty - 7), label, fill=rgb_u8, font=_CBAR_FONT)
-
-        return img
-
     # ── Render loop ──────────────────────────────────────────────────────────
 
     def _mark_dirty(self) -> None:
@@ -879,15 +730,8 @@ class SmplxInteractiveApp:
                         _RESAMPLE,
                     )
 
-                gizmo_center = None
                 if self._var_range is not None:
-                    img, panel_rect = self._draw_colorbar(img, self._var_range)
-                    if panel_rect is not None:
-                        px, py, panel_w, panel_h = panel_rect
-                        gizmo_center = (px + panel_w // 2, py + panel_h + 65)
-
-                if self._direction_mode:
-                    img = self._draw_axis_gizmo(img, center=gizmo_center)
+                    img = self._draw_colorbar(img, self._var_range)
 
                 self._photo_image = ImageTk.PhotoImage(image=img)
                 self.canvas.delete("all")
@@ -938,12 +782,8 @@ class SmplxInteractiveApp:
         tri_mesh         = self._build_trimesh(vertices, self.center)
 
         # Always OPAQUE — colormaps normalised per group, no transparency
-        if self._direction_mode:
-            vertex_colors, std_ref_max = self._compute_variance_colors()
-            self._var_range = std_ref_max if self._variance_active() else None
-        else:
-            vertex_colors, std_ref_max = self._compute_per_param_colors()
-            self._var_range = std_ref_max
+        vertex_colors, std_ref_max = self._compute_per_param_colors()
+        self._var_range = std_ref_max
 
         if len(vertex_colors) == len(tri_mesh.vertices):
             prim = pyrender.Primitive(
@@ -1200,16 +1040,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=_parse_bool_flag,
         help="Enable dynamic face-contour landmarks in the SMPL-X forward pass.",
     )
-    parser.add_argument(
-        "--direction",
-        action="store_true",
-        default=False,
-        help=(
-            "Colour-code uncertainty by dominant variance axis "
-            "(x=red, y=yellow, z=green). "
-            "Without this flag, only the uncertainty amplitude is shown."
-        ),
-    )
     return parser.parse_args(argv)
 
 
@@ -1222,7 +1052,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         num_betas=args.num_betas,
         num_expression_coeffs=args.num_expression_coeffs,
         use_face_contour=args.use_face_contour,
-        direction=args.direction,
     )
     app.run()
     return 0

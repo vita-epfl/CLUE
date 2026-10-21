@@ -51,15 +51,6 @@ if _TURBO is not None:
 else:
     _BASE_COLOR = np.array([0.05, 0.14, 0.28], dtype=np.float32)
 
-_DIR_COLORS = np.array(
-    [
-        [0.85, 0.05, 0.05],
-        [0.85, 0.80, 0.05],
-        [0.05, 0.65, 0.05],
-    ],
-    dtype=np.float32,
-)
-_DIR_LABELS = ["x", "y", "z"]
 _AMPLITUDE_HIGH = np.array([0.85, 0.05, 0.05], dtype=np.float32)
 
 # MHR vertices are in centimeters in the released assets.
@@ -68,15 +59,6 @@ _ROOT_MODEL_PARAM_COUNT = 6
 
 _JOINT_RADIUS = 0.8
 _JOINT_LINE_RADIUS = 0.18
-
-
-def _dir_colors(var_xyz: np.ndarray, t: np.ndarray) -> np.ndarray:
-    dominant = var_xyz.argmax(axis=-1)
-    target = _DIR_COLORS[dominant]
-    t_col = np.clip(t, 0.0, 1.0)[:, np.newaxis]
-    rgb = (1.0 - t_col) * _BASE_COLOR + t_col * target
-    alpha = np.ones((len(t), 1), dtype=np.float32)
-    return (np.concatenate([rgb, alpha], axis=-1) * 255).astype(np.uint8)
 
 
 def _amplitude_colors(t: np.ndarray) -> np.ndarray:
@@ -220,9 +202,7 @@ class MhrInteractiveApp:
         num_expression_coeffs: int,
         num_model_params: int,
         apply_correctives: bool,
-        direction: bool,
     ) -> None:
-        self._direction_mode = direction
         self.apply_correctives = apply_correctives
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -563,44 +543,6 @@ class MhrInteractiveApp:
             active_groups.add("model")
         return active_groups
 
-    def _compute_variance_colors(self) -> tuple[np.ndarray, float | None]:
-        if not self._variance_active():
-            return _amplitude_colors(
-                np.zeros(self.model.character.mesh.n_vertices, dtype=np.float32)
-            ), None
-
-        common_args = self._variance_common_args()
-        total_var, _ = self.clue.compute_variance(
-            self._build_identity_vars(),
-            self._build_model_vars(),
-            self._build_expression_vars(),
-            **common_args,
-        )
-        var_xyz = np.maximum(total_var[0].detach().cpu().numpy(), 0.0)
-        std = np.sqrt(var_xyz.sum(axis=-1)) * _MODEL_STD_TO_MM
-
-        total_var_max, _ = self.clue.compute_variance(
-            self._build_identity_vars_max(),
-            self._build_model_vars_max(),
-            self._build_expression_vars_max(),
-            **common_args,
-        )
-        std_max = (
-            np.sqrt(
-                np.maximum(
-                    total_var_max[0].sum(dim=-1).detach().cpu().numpy(),
-                    0.0,
-                )
-            )
-            * _MODEL_STD_TO_MM
-        )
-        std_ref_max = float(std_max.max())
-        t = std / std_ref_max if std_ref_max > 0.0 else np.zeros_like(std)
-
-        if self._direction_mode:
-            return _dir_colors(var_xyz, t), std_ref_max
-        return _amplitude_colors(t), std_ref_max
-
     def _compute_per_param_colors(self) -> tuple[np.ndarray, float | None]:
         if not self._variance_active():
             vertex_count = int(self.model.character.mesh.n_vertices)
@@ -723,37 +665,9 @@ class MhrInteractiveApp:
         if self._show_joints.get():
             self._create_joint_overlay(joints, self.center, self.scene)
 
-    def _draw_colorbar(self, img: Image.Image, std_ref_max: float):
-        if self._direction_mode:
-            return self._draw_direction_legend(img, std_ref_max)
-        return self._draw_amplitude_bar(img, std_ref_max), None
-
-    def _draw_direction_legend(self, img: Image.Image, std_ref_max: float):
-        draw = ImageDraw.Draw(img)
-        iw, _ih = img.size
-        swatch_w = 40
-        swatch_h = 26
-        margin_r = 14
-        margin_t = 14
-        row_gap = 6
-        pad = 10
-        panel_w = 170
-        swatches_h = len(_DIR_LABELS) * swatch_h + (len(_DIR_LABELS) - 1) * row_gap
-        panel_h = pad + 20 + swatches_h + 8 + 1 + 6 + 14 + pad
-        px = iw - margin_r - panel_w
-        py = margin_t
-        draw.rectangle([px, py, px + panel_w, py + panel_h], fill=(245, 245, 245), outline=(190, 190, 190))
-        draw.text((px + pad, py + pad), "Axis of largest variation", fill=(50, 50, 50), font=_CBAR_FONT)
-        for idx, (label, color) in enumerate(zip(_DIR_LABELS, _DIR_COLORS)):
-            sx = px + pad
-            sy = py + pad + 20 + idx * (swatch_h + row_gap)
-            rgb = tuple((color * 255).astype(np.uint8))
-            draw.rectangle([sx, sy, sx + swatch_w, sy + swatch_h], fill=rgb, outline=(80, 80, 80))
-            draw.text((sx + swatch_w + 6, sy + 5), label, fill=(30, 30, 30), font=_CBAR_FONT)
-        sep_y = py + pad + 20 + swatches_h + 8
-        draw.line([(px + pad, sep_y), (px + panel_w - pad, sep_y)], fill=(190, 190, 190), width=1)
-        draw.text((px + pad, sep_y + 6), f"max std = {std_ref_max:.1f} mm", fill=(80, 80, 80), font=_CBAR_FONT)
-        return img, (px, py, panel_w, panel_h)
+    def _draw_colorbar(self, img: Image.Image, std_ref_max: float) -> Image.Image:
+        """Render the uncertainty colour bar in the top-right corner of img."""
+        return self._draw_amplitude_bar(img, std_ref_max)
 
     def _draw_amplitude_bar(self, img: Image.Image, std_ref_max: float) -> Image.Image:
         draw = ImageDraw.Draw(img)
@@ -786,35 +700,6 @@ class MhrInteractiveApp:
         draw.text((px + pad, by + bar_h - 14), "0 mm", fill=(30, 30, 30), font=_CBAR_FONT)
         return img
 
-    def _draw_axis_gizmo(
-        self,
-        img: Image.Image,
-        center: tuple[int, int] | None = None,
-    ) -> Image.Image:
-        draw = ImageDraw.Draw(img)
-        _iw, ih = img.size
-        arm_len = 50
-        if center is None:
-            ox, oy = 60, ih - 60
-        else:
-            ox, oy = int(center[0]), int(center[1])
-
-        view_rotation = self.orbit.get_pose()[:3, :3].T
-        axes = [
-            (np.array([1.0, 0.0, 0.0]), _DIR_COLORS[0], "x"),
-            (np.array([0.0, 1.0, 0.0]), _DIR_COLORS[1], "y"),
-            (np.array([0.0, 0.0, 1.0]), _DIR_COLORS[2], "z"),
-        ]
-        for world_dir, color, label in sorted(axes, key=lambda item: -(view_rotation @ item[0])[2]):
-            cam_dir = view_rotation @ world_dir
-            tx = int(ox + arm_len * cam_dir[0])
-            ty = int(oy - arm_len * cam_dir[1])
-            rgb = tuple((color * 255).astype(np.uint8))
-            draw.line([(ox, oy), (tx, ty)], fill=rgb, width=3)
-            draw.ellipse([tx - 4, ty - 4, tx + 4, ty + 4], fill=rgb)
-            draw.text((tx + 5, ty - 7), label, fill=rgb, font=_CBAR_FONT)
-        return img
-
     def _mark_dirty(self) -> None:
         self._dirty = True
 
@@ -835,14 +720,8 @@ class MhrInteractiveApp:
                         ),
                         _RESAMPLE,
                     )
-                gizmo_center = None
                 if self._var_range is not None:
-                    img, panel_rect = self._draw_colorbar(img, self._var_range)
-                    if panel_rect is not None:
-                        px, py, panel_w, panel_h = panel_rect
-                        gizmo_center = (px + panel_w // 2, py + panel_h + 65)
-                if self._direction_mode:
-                    img = self._draw_axis_gizmo(img, center=gizmo_center)
+                    img = self._draw_colorbar(img, self._var_range)
                 self._photo_image = ImageTk.PhotoImage(image=img)
                 self.canvas.delete("all")
                 self.canvas.create_image(canvas_w // 2, canvas_h // 2, image=self._photo_image, anchor="center")
@@ -885,12 +764,8 @@ class MhrInteractiveApp:
         self._scheduled_update = None
         vertices, joints = self._compute_vertices()
         tri_mesh = self._build_trimesh(vertices, self.center)
-        if self._direction_mode:
-            vertex_colors, std_ref_max = self._compute_variance_colors()
-            self._var_range = std_ref_max if self._variance_active() else None
-        else:
-            vertex_colors, std_ref_max = self._compute_per_param_colors()
-            self._var_range = std_ref_max
+        vertex_colors, std_ref_max = self._compute_per_param_colors()
+        self._var_range = std_ref_max
 
         if len(vertex_colors) == len(tri_mesh.vertices):
             primitive = pyrender.Primitive(
@@ -1151,16 +1026,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "uncertainty through the non-linear corrective network."
         ),
     )
-    parser.add_argument(
-        "--direction",
-        action="store_true",
-        default=False,
-        help=(
-            "Colour-code uncertainty by dominant variance axis "
-            "(x=red, y=yellow, z=green). "
-            "Without this flag, only the uncertainty amplitude is shown."
-        ),
-    )
     return parser.parse_args(argv)
 
 
@@ -1173,7 +1038,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         num_expression_coeffs=args.num_expression_coeffs,
         num_model_params=args.num_model_params,
         apply_correctives=args.apply_correctives,
-        direction=args.direction,
     )
     app.run()
     return 0
